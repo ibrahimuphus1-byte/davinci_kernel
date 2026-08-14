@@ -25,15 +25,11 @@ export REKERNEL_SELECTOR="$7"
 chmod +x scripts/env.sh
 source scripts/env.sh
 
-# Setup patches - ONLY if KSU is explicitly requested
-if [ "$KERNELSU_SELECTOR" = "resukisu-susfs" ]; then
-    chmod +x scripts/patches.sh
-    source scripts/patches.sh
-else
-    echo "- Skipping KSU/SusFS patches because KERNELSU_SELECTOR is not 'resukisu-susfs'"
-fi
+# Setup patches (ALWAYS applied — they are safe and do NOT include KSU)
+chmod +x scripts/patches.sh
+source scripts/patches.sh
 
-# Setup goodies
+# Setup goodies (KernelSU part is already commented out in your goodies.sh)
 chmod +x scripts/goodies.sh
 source scripts/goodies.sh
 
