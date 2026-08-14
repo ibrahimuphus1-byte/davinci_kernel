@@ -136,7 +136,7 @@ jobs:
         run: |
           echo "Starting to compile..."
           cd android_kernel_xiaomi_sm6150/
-          ./build.sh ${{ matrix.rom }} davinci bbg nomount droidspaces rekernel
+          ./build.sh ${{ matrix.rom }} davinci "" bbg nomount droidspaces rekernel
           cd ..
           ccache -s
 
