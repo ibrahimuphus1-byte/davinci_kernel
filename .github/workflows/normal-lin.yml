@@ -1,0 +1,80 @@
+name: Nebula Kernel Build (LineageOS)
+
+on:
+  workflow_dispatch:
+
+env:
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git curl make bc bison flex libssl-dev cpio lz4 gcc-aarch64-linux-gnu
+
+      - name: Setup Clang toolchain
+        run: |
+          mkdir -p toolchain
+          cd toolchain
+          git clone https://gitlab.com/ThankYouMario/proprietary_vendor_google_proton_clang.git proton-clang -b master
+          cd ..
+
+      - name: Set build date
+        id: ts
+        run: echo "DATE=$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+
+      - name: Build kernel
+        run: |
+          # The 3rd argument "" disables KernelSU while keeping the argument count valid
+          ./build.sh lineageos davinci "" bbg nomount droidspaces rekernel
+          # Clean up any leftover KSU env file (just in case)
+          rm -f /tmp/ksu_resolved.env || true
+
+      - name: Assemble outputs
+        id: assemble
+        run: |
+          # Find the built zip file safely
+          ZIPFILE=$(find . -name "*.zip" -type f -print | head -n1)
+          if [ -z "$ZIPFILE" ]; then
+            echo "No zip file found!"
+            ls -la
+            exit 1
+          fi
+
+          # Rename it without any KSU references
+          DATE=$(date +%Y%m%d-%H%M%S)
+          NEW_ZIP="Nebula-LineageOS-davinci-${DATE}.zip"
+          mv "$ZIPFILE" "$NEW_ZIP"
+          echo "zip_name=${NEW_ZIP}" >> $GITHUB_OUTPUT
+          echo "Renamed to ${NEW_ZIP}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nebula-LineageOS-davinci
+          path: *.zip
+
+      - name: Create Release
+        id: create_release
+        if: github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: LineageOS-Latest-${{ steps.ts.outputs.DATE }}
+          name: "Nebula Kernel - LineageOS (Latest)"
+          body: |
+            LineageOS kernel build for davinci.
+
+            Compiled from the latest source.
+          draft: false
+          prerelease: false
+          files: |
+            *.zip
