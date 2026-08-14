@@ -136,7 +136,7 @@ jobs:
         run: |
           echo "Starting to compile..."
           cd android_kernel_xiaomi_sm6150/
-          ./build.sh ${{ matrix.rom }} davinci resukisu-susfs bbg nomount droidspaces rekernel
+          ./build.sh ${{ matrix.rom }} davinci bbg nomount droidspaces rekernel
           cd ..
           ccache -s
 
@@ -151,7 +151,6 @@ jobs:
         id: meta
         run: |
           cd android_kernel_xiaomi_sm6150
-          source /tmp/ksu_resolved.env
 
           KV=$(awk '/^VERSION = /{print $3}' Makefile)
           KP=$(awk '/^PATCHLEVEL = /{print $3}' Makefile)
@@ -206,7 +205,7 @@ jobs:
 
       - name: Pack kernel with AnyKernel3
         run: |
-          ZIPNAME="Nebula-${{ matrix.display }}-davinci-ReSukiSU-${{ steps.ts.outputs.DATE }}.zip"
+          ZIPNAME="Nebula-${{ matrix.display }}-davinci-${{ steps.ts.outputs.DATE }}.zip"
           cd AnyKernel3
           zip -rq9 "../$ZIPNAME" ./*
           cd ..
@@ -314,8 +313,6 @@ jobs:
           prerelease: false
           body: |
             **Kernel**: `${{ steps.assemble.outputs.kernel_version }}`
-            **ReSukiSU**: `${{ steps.assemble.outputs.ksu_name }}` (code `${{ steps.assemble.outputs.ksu_code }}`)
-            **SusFS**: `${{ steps.assemble.outputs.susfs_version }}`
             **Built with**: `${{ steps.assemble.outputs.clang_display }}`
 
             ${{ steps.assemble.outputs.rom_lines }}
