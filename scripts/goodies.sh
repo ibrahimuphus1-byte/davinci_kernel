@@ -10,8 +10,8 @@ git clone https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd.git scripts/goo
 # cd ../../../
 
 # KernelSU
-chmod +x scripts/goodies/kernelsu.sh
-source scripts/goodies/kernelsu.sh
+#chmod +x scripts/goodies/kernelsu.sh
+#source scripts/goodies/kernelsu.sh
 
 # Baseband Guard
 chmod +x scripts/goodies/baseband.sh
