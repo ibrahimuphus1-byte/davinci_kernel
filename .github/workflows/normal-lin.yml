@@ -1,6 +1,12 @@
 name: Weekly Kernel Build (Lineage)
 
 on:
+  workflow_dispatch:
+    inputs:
+      build_lineageos:
+        description: 'Build LineageOS'
+        type: boolean
+        default: true
   schedule:
     - cron: '5 3 * * 0'
 
@@ -8,11 +14,39 @@ permissions:
   contents: write
 
 jobs:
+  determine_roms:
+    runs-on: ubuntu-latest
+    outputs:
+      roms: ${{ steps.set.outputs.roms }}
+    steps:
+      - id: set
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BUILD_LINEAGEOS="${{ inputs.build_lineageos }}"
+          else
+            BUILD_LINEAGEOS="true"
+          fi
+
+          ROMS="[]"
+          [ "$BUILD_LINEAGEOS" = "true" ] && ROMS=$(echo "$ROMS" | jq -c '. + [{"rom":"lineageos","repo":"LineageOS/android_kernel_xiaomi_sm6150","display":"LineageOS"}]')
+
+          if [ "$ROMS" = "[]" ]; then
+            echo "Fatal: no ROM selected"
+            exit 1
+          fi
+          echo "Building: $ROMS"
+          echo "roms=$ROMS" >> $GITHUB_OUTPUT
+
   build:
+    needs: determine_roms
     runs-on: ubuntu-latest
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 3G
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.determine_roms.outputs.roms) }}
 
     steps:
       - uses: actions/checkout@v7
@@ -37,16 +71,16 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-davinci-lineageos-${{ github.run_id }}
+          key: ccache-davinci-${{ matrix.rom }}-${{ github.run_id }}
           restore-keys: |
-            ccache-davinci-lineageos-
+            ccache-davinci-${{ matrix.rom }}-
 
       - name: Resolve ROM branch
         run: |
-          BRANCH=$(git ls-remote --symref https://github.com/LineageOS/android_kernel_xiaomi_sm6150.git HEAD \
+          BRANCH=$(git ls-remote --symref https://github.com/${{ matrix.repo }}.git HEAD \
             | awk '/^ref:/{sub("refs/heads/","",$2); print $2}')
           if [ -z "$BRANCH" ]; then
-            echo "Fatal: could not resolve default branch for LineageOS/android_kernel_xiaomi_sm6150"
+            echo "Fatal: could not resolve default branch for ${{ matrix.repo }}"
             exit 1
           fi
           echo "Resolved branch: $BRANCH"
@@ -58,7 +92,7 @@ jobs:
             rm -rf android_kernel_xiaomi_sm6150
           fi
           echo "Cloning kernel sources..."
-          git clone https://github.com/LineageOS/android_kernel_xiaomi_sm6150.git -b "$ROM_BRANCH" --depth=1 android_kernel_xiaomi_sm6150
+          git clone https://github.com/${{ matrix.repo }}.git -b "$ROM_BRANCH" --depth=1 android_kernel_xiaomi_sm6150
           echo "Copying buildscript..."
           cp build.sh android_kernel_xiaomi_sm6150/
           cp -r scripts android_kernel_xiaomi_sm6150/
@@ -87,7 +121,7 @@ jobs:
         run: |
           echo "Starting to compile..."
           cd android_kernel_xiaomi_sm6150/
-          ./build.sh lineageos davinci
+          ./build.sh ${{ matrix.rom }} davinci
           cd ..
           ccache -s
 
@@ -96,13 +130,13 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-davinci-lineageos-${{ github.run_id }}
+          key: ccache-davinci-${{ matrix.rom }}-${{ github.run_id }}
 
       - name: Collect release metadata
         id: meta
         run: |
           cd android_kernel_xiaomi_sm6150
-          source /tmp/nomount_resolved.env  # keep NoMount if used
+          source /tmp/nomount_resolved.env
 
           KV=$(awk '/^VERSION = /{print $3}' Makefile)
           KP=$(awk '/^PATCHLEVEL = /{print $3}' Makefile)
@@ -118,12 +152,12 @@ jobs:
           CLANG_VER=$("$PWD/clang/bin/clang" --version 2>&1 | head -1 | sed -nE 's/.*clang version ([^ ]+).*/\1/p')
           CLANG_DISPLAY="Neutron Clang ${CLANG_VER}"
 
+          NOMOUNT_VERSION="${NOMOUNT_RESOLVED_TAG:-unknown}"
+
           SUSFS_VERSION=$(curl -fsSL \
             "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/.github/workflows/patch-susfs/action.yml" \
             | grep -oP 'SUSFS_VERSION="\K[^"]+')
           SUSFS_VERSION="${SUSFS_VERSION:-unknown}"
-
-          NOMOUNT_VERSION="${NOMOUNT_RESOLVED_TAG:-unknown}"
 
           echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
           echo "rom_version=$ROM_VERSION" >> $GITHUB_OUTPUT
@@ -133,7 +167,7 @@ jobs:
 
           echo "=== Collected metadata ==="
           echo "Kernel: $KERNEL_VERSION"
-          echo "LineageOS: $ROM_VERSION ($ROM_BRANCH)"
+          echo "${{ matrix.display }}: $ROM_VERSION ($ROM_BRANCH)"
           echo "Clang: $CLANG_DISPLAY"
           echo "SusFS: $SUSFS_VERSION"
           echo "NoMount: $NOMOUNT_VERSION"
@@ -149,18 +183,18 @@ jobs:
 
       - name: Pack kernel with AnyKernel3
         run: |
-          ZIPNAME="Nebula-LineageOS-davinci-${{ steps.ts.outputs.DATE }}.zip"
+          ZIPNAME="Nebula-${{ matrix.display }}-davinci-${{ steps.ts.outputs.DATE }}.zip"
           cd AnyKernel3
           zip -rq9 "../$ZIPNAME" ./*
           cd ..
           echo "ZIPNAME=$ZIPNAME" >> $GITHUB_ENV
 
-      - name: Stage build for release
+      - name: Stage build for combined release
         run: |
-          STAGE="/tmp/release_stage"
+          STAGE="/tmp/release_stage_${{ matrix.rom }}"
           mkdir -p "$STAGE"
           cp "$ZIPNAME" "$STAGE/"
-          echo "LineageOS" > "$STAGE/display.txt"
+          echo "${{ matrix.display }}" > "$STAGE/display.txt"
           echo "${{ steps.meta.outputs.rom_version }}" > "$STAGE/rom_version.txt"
           echo "${{ steps.meta.outputs.kernel_version }}" > "$STAGE/kernel_version.txt"
           echo "${{ steps.meta.outputs.susfs_version }}" > "$STAGE/susfs_version.txt"
@@ -170,37 +204,44 @@ jobs:
       - name: Cache build output for release job
         uses: actions/cache/save@v6
         with:
-          path: /tmp/release_stage
-          key: nebula-build-lineageos-${{ github.run_id }}
+          path: /tmp/release_stage_${{ matrix.rom }}
+          key: nebula-build-${{ matrix.rom }}-${{ github.run_id }}
 
   release:
     needs: build
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Restore LineageOS build
         uses: actions/cache/restore@v6
         with:
-          path: /tmp/release_stage
+          path: /tmp/release_stage_lineageos
           key: nebula-build-lineageos-${{ github.run_id }}
-          fail-on-cache-miss: true
+          fail-on-cache-miss: false
 
-      - name: Assemble release
+      - name: Assemble combined release
         id: assemble
         run: |
-          KERNEL_VERSION=$(cat /tmp/release_stage/kernel_version.txt)
-          SUSFS_VERSION=$(cat /tmp/release_stage/susfs_version.txt)
-          NOMOUNT_VERSION=$(cat /tmp/release_stage/nomount_version.txt)
-          CLANG_DISPLAY=$(cat /tmp/release_stage/clang_display.txt)
-          ROM_VERSION=$(cat /tmp/release_stage/rom_version.txt)
+          if [ ! -d "/tmp/release_stage_lineageos" ]; then
+            echo "Fatal: LineageOS build not found, nothing to release"
+            exit 1
+          fi
 
-          cp /tmp/release_stage/*.zip .
+          KERNEL_VERSION=$(cat "/tmp/release_stage_lineageos/kernel_version.txt")
+          SUSFS_VERSION=$(cat "/tmp/release_stage_lineageos/susfs_version.txt")
+          NOMOUNT_VERSION=$(cat "/tmp/release_stage_lineageos/nomount_version.txt")
+          CLANG_DISPLAY=$(cat "/tmp/release_stage_lineageos/clang_display.txt")
+          ROM_VERSION=$(cat "/tmp/release_stage_lineageos/rom_version.txt")
+          DISPLAY=$(cat "/tmp/release_stage_lineageos/display.txt")
+
+          cp /tmp/release_stage_lineageos/*.zip .
 
           echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
           echo "susfs_version=$SUSFS_VERSION" >> $GITHUB_OUTPUT
           echo "nomount_version=$NOMOUNT_VERSION" >> $GITHUB_OUTPUT
           echo "clang_display=$CLANG_DISPLAY" >> $GITHUB_OUTPUT
           echo "title_date=$(date +'%Y/%m/%d')" >> $GITHUB_OUTPUT
-          echo "rom_version=$ROM_VERSION" >> $GITHUB_OUTPUT
+          echo "rom_line=**${DISPLAY}**: \`${ROM_VERSION}\`" >> $GITHUB_OUTPUT
 
       - name: Create Release and Upload builds
         uses: softprops/action-gh-release@v3
@@ -213,10 +254,11 @@ jobs:
           prerelease: false
           body: |
             **Kernel**: `${{ steps.assemble.outputs.kernel_version }}`
-            **LineageOS**: `${{ steps.assemble.outputs.rom_version }}`
             **SusFS**: `${{ steps.assemble.outputs.susfs_version }}`
             **NoMount**: `${{ steps.assemble.outputs.nomount_version }}`
             **Built with**: `${{ steps.assemble.outputs.clang_display }}`
+
+            ${{ steps.assemble.outputs.rom_line }}
 
             [NoMount meta module](https://github.com/maxsteeel/nomount/releases)
           files: Nebula-*.zip
@@ -234,18 +276,20 @@ jobs:
 
           DATE="${{ steps.assemble.outputs.title_date }}"
           KV="${{ steps.assemble.outputs.kernel_version }}"
-          RV="${{ steps.assemble.outputs.rom_version }}"
           SV="${{ steps.assemble.outputs.susfs_version }}"
           NV="${{ steps.assemble.outputs.nomount_version }}"
           CD="${{ steps.assemble.outputs.clang_display }}"
+          DISPLAY=$(cat "/tmp/release_stage_lineageos/display.txt")
+          ROM_VERSION=$(cat "/tmp/release_stage_lineageos/rom_version.txt")
 
           MESSAGE="<b>New release - ${DATE}</b>
 
           <b>Kernel</b>  <code>${KV}</code>
-          <b>LineageOS</b>  <code>${RV}</code>
           <b>SUSFS</b>  <code>${SV}</code>
           <b>NoMount</b>  <code>${NV}</code>
           <b>Built with</b>  <code>${CD}</code>
+
+          <b>${DISPLAY}</b>  <code>${ROM_VERSION}</code>
 
           <a href=\"https://github.com/maxsteeel/nomount/releases\">NoMount meta module</a>"
 
@@ -256,9 +300,9 @@ jobs:
             --form-string 'link_preview_options={"is_disabled":true}' \
             --max-time 30 -w "\nHTTP_STATUS:%{http_code}\n" || true
 
-          zipfile=$(ls /tmp/release_stage/*.zip 2>/dev/null | head -1)
+          zipfile=$(ls /tmp/release_stage_lineageos/*.zip 2>/dev/null | head -1)
           if [ -n "$zipfile" ]; then
-            curl -sS -X POST "https://api.telegram.me/bot${TG_TOKEN}/sendDocument" \
+            curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
               --form-string "chat_id=${TG_CHAT}" \
               -F "document=@${zipfile}" \
               --max-time 120 -w "\nHTTP_STATUS:%{http_code}\n" 2>&1 || true
