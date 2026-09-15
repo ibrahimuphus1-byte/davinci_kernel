@@ -13,8 +13,8 @@ git clone https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd.git scripts/goo
 #source scripts/goodies/baseband.sh
 
 # NoMount
-chmod +x scripts/goodies/nomount.sh
-source scripts/goodies/nomount.sh
+#chmod +x scripts/goodies/nomount.sh
+#source scripts/goodies/nomount.sh
 
 # Droidspaces
 #chmod +x scripts/goodies/droidspaces.sh
