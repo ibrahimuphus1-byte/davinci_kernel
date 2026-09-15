@@ -136,7 +136,6 @@ jobs:
         id: meta
         run: |
           cd android_kernel_xiaomi_sm6150
-          source /tmp/nomount_resolved.env
 
           KV=$(awk '/^VERSION = /{print $3}' Makefile)
           KP=$(awk '/^PATCHLEVEL = /{print $3}' Makefile)
@@ -152,25 +151,15 @@ jobs:
           CLANG_VER=$("$PWD/clang/bin/clang" --version 2>&1 | head -1 | sed -nE 's/.*clang version ([^ ]+).*/\1/p')
           CLANG_DISPLAY="Neutron Clang ${CLANG_VER}"
 
-          NOMOUNT_VERSION="${NOMOUNT_RESOLVED_TAG:-unknown}"
-
-          SUSFS_VERSION=$(curl -fsSL \
-            "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/.github/workflows/patch-susfs/action.yml" \
-            | grep -oP 'SUSFS_VERSION="\K[^"]+')
-          SUSFS_VERSION="${SUSFS_VERSION:-unknown}"
 
           echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
           echo "rom_version=$ROM_VERSION" >> $GITHUB_OUTPUT
           echo "clang_display=$CLANG_DISPLAY" >> $GITHUB_OUTPUT
-          echo "susfs_version=$SUSFS_VERSION" >> $GITHUB_OUTPUT
-          echo "nomount_version=$NOMOUNT_VERSION" >> $GITHUB_OUTPUT
 
           echo "=== Collected metadata ==="
           echo "Kernel: $KERNEL_VERSION"
           echo "${{ matrix.display }}: $ROM_VERSION ($ROM_BRANCH)"
           echo "Clang: $CLANG_DISPLAY"
-          echo "SusFS: $SUSFS_VERSION"
-          echo "NoMount: $NOMOUNT_VERSION"
 
       - name: Preparing AnyKernel3 sources
         run: |
@@ -197,8 +186,6 @@ jobs:
           echo "${{ matrix.display }}" > "$STAGE/display.txt"
           echo "${{ steps.meta.outputs.rom_version }}" > "$STAGE/rom_version.txt"
           echo "${{ steps.meta.outputs.kernel_version }}" > "$STAGE/kernel_version.txt"
-          echo "${{ steps.meta.outputs.susfs_version }}" > "$STAGE/susfs_version.txt"
-          echo "${{ steps.meta.outputs.nomount_version }}" > "$STAGE/nomount_version.txt"
           echo "${{ steps.meta.outputs.clang_display }}" > "$STAGE/clang_display.txt"
 
       - name: Cache build output for release job
@@ -228,8 +215,6 @@ jobs:
           fi
 
           KERNEL_VERSION=$(cat "/tmp/release_stage_lineageos/kernel_version.txt")
-          SUSFS_VERSION=$(cat "/tmp/release_stage_lineageos/susfs_version.txt")
-          NOMOUNT_VERSION=$(cat "/tmp/release_stage_lineageos/nomount_version.txt")
           CLANG_DISPLAY=$(cat "/tmp/release_stage_lineageos/clang_display.txt")
           ROM_VERSION=$(cat "/tmp/release_stage_lineageos/rom_version.txt")
           DISPLAY=$(cat "/tmp/release_stage_lineageos/display.txt")
@@ -237,8 +222,6 @@ jobs:
           cp /tmp/release_stage_lineageos/*.zip .
 
           echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
-          echo "susfs_version=$SUSFS_VERSION" >> $GITHUB_OUTPUT
-          echo "nomount_version=$NOMOUNT_VERSION" >> $GITHUB_OUTPUT
           echo "clang_display=$CLANG_DISPLAY" >> $GITHUB_OUTPUT
           echo "title_date=$(date +'%Y/%m/%d')" >> $GITHUB_OUTPUT
           echo "rom_line=**${DISPLAY}**: \`${ROM_VERSION}\`" >> $GITHUB_OUTPUT
@@ -254,13 +237,10 @@ jobs:
           prerelease: false
           body: |
             **Kernel**: `${{ steps.assemble.outputs.kernel_version }}`
-            **SusFS**: `${{ steps.assemble.outputs.susfs_version }}`
-            **NoMount**: `${{ steps.assemble.outputs.nomount_version }}`
             **Built with**: `${{ steps.assemble.outputs.clang_display }}`
 
             ${{ steps.assemble.outputs.rom_line }}
 
-            [NoMount meta module](https://github.com/maxsteeel/nomount/releases)
           files: Nebula-*.zip
           overwrite_files: true
 
@@ -276,8 +256,6 @@ jobs:
 
           DATE="${{ steps.assemble.outputs.title_date }}"
           KV="${{ steps.assemble.outputs.kernel_version }}"
-          SV="${{ steps.assemble.outputs.susfs_version }}"
-          NV="${{ steps.assemble.outputs.nomount_version }}"
           CD="${{ steps.assemble.outputs.clang_display }}"
           DISPLAY=$(cat "/tmp/release_stage_lineageos/display.txt")
           ROM_VERSION=$(cat "/tmp/release_stage_lineageos/rom_version.txt")
@@ -285,13 +263,10 @@ jobs:
           MESSAGE="<b>New release - ${DATE}</b>
 
           <b>Kernel</b>  <code>${KV}</code>
-          <b>SUSFS</b>  <code>${SV}</code>
-          <b>NoMount</b>  <code>${NV}</code>
           <b>Built with</b>  <code>${CD}</code>
 
           <b>${DISPLAY}</b>  <code>${ROM_VERSION}</code>
 
-          <a href=\"https://github.com/maxsteeel/nomount/releases\">NoMount meta module</a>"
 
           curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             --form-string "chat_id=${TG_CHAT}" \
